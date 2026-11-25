@@ -34,7 +34,7 @@
       <li>用電腦開啟<a href="markers.html">標記列印頁</a>，以 100% 實際大小列印，沿外框線裁切。</li>
       <li>把標記貼在腹板上，上緣與梁頂平行。</li>
       <li>開啟相機後，在「位置」裡輸入標記紙南緣距南端、上緣距梁頂的尺寸。</li>
-      <li>沒有標記時按「半自動」：它會試著找出鋼梁的上下邊和梁端，再請你確認或拖動修正。</li>
+      <li>沒有標記時按「半自動」：它會判斷你拍的是側面還是端面、找出鋼梁的位置，再請你確認或拖動修正。</li>
     </ol>
   </section>
 </main>
@@ -54,7 +54,8 @@
     <div id="chips" class="chips"></div>
     <div id="alignBar" hidden>
       <div id="alignMsg" class="amsg"></div>
-      <div class="arow"><span>紅線這一端是</span><div class="seg" id="endSeg"><button data-end="S" type="button">南端</button><button data-end="N" type="button">北端</button></div></div>
+      <div class="arow"><span>我拍的是</span><div class="seg" id="viewSeg"><button data-view="side" type="button">側面</button><button data-view="end" type="button">端面</button></div></div>
+      <div class="arow"><span id="endLabel">紅線這一端是</span><div class="seg" id="endSeg"><button data-end="S" type="button">南端</button><button data-end="N" type="button">北端</button></div></div>
       <div class="arow"><span>沿梁移動</span><div class="nudge" data-key="ax"><button data-d="-100">−100</button><button data-d="-10">−10</button><button data-d="10">+10</button><button data-d="100">+100</button></div></div>
       <div class="tools">
         <button id="alignRedo" class="btn small" type="button">重新偵測</button>
@@ -101,6 +102,11 @@
       <div class="dim small">正面看對得上、斜著看卻一邊偏掉時，慢慢調這個，調到斜看也對齊為止。每支手機只要調一次。</div>
     </div>
     <div class="field">
+      <div class="flabel">AI 通行碼</div>
+      <input id="aiCode" type="password" autocomplete="off" autocapitalize="off" placeholder="輸入你自己設定的通行碼">
+      <div class="dim small" id="aiHint"></div>
+    </div>
+    <div class="field">
       <div class="flabel">疊圖濃度 <b id="opVal"></b>%</div>
       <input id="opacity" type="range" min="15" max="90" step="5">
     </div>
@@ -123,6 +129,7 @@
 <script src="vendor/three.min.js"></script>
 <script src="vendor/cv.js"></script>
 <script src="vendor/aruco.js"></script>
+<script src="config.js"></script>
 <script src="model.js"></script>
 <script src="app.js"></script>
 </body>

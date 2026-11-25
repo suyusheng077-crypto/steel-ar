@@ -322,6 +322,7 @@
     video.srcObject = null; $('ar').hidden = true; $('home').hidden = false; setFrozen(false);
   }
   function setFrozen(v) {
+    if (!v && align) endAlign();
     frozen = v; $('freezeBtn').classList.toggle('on', v); $('freezeBtn').textContent = v ? '繼續' : '凍結';
     if (v) video.pause(); else if (stream) { var p = video.play(); if (p && p.catch) p.catch(function () { }); }
   }
@@ -361,6 +362,7 @@
     row.addEventListener('click', function (e) {
       var d = parseFloat(e.target.dataset.d); if (!d) return;
       var key = row.dataset.key;
+      if (key === 'ax') { if (align) { align.dx += d; solveAlign(); } return; }
       if (key === 'ms') { cfg.ms = Math.max(40, Math.min(400, cfg.ms + d)); refreshSet(); }
       else { var m = markerCfg(curId); m[key] = Math.round(m[key] + d); m.set = true; refreshPos(); }
       save('steelar.cfg', cfg); updateHolder(); redraw();
@@ -381,27 +383,212 @@
       box.appendChild(b);
     });
   }
-  $('fov').addEventListener('input', function () { cfg.fov = parseFloat(this.value); $('fovVal').textContent = cfg.fov; save('steelar.cfg', cfg); setProjection(); updateHolder(); redraw(); });
+  $('fov').addEventListener('input', function () { cfg.fov = parseFloat(this.value); $('fovVal').textContent = cfg.fov; save('steelar.cfg', cfg); setProjection(); updateHolder(); if (align) solveAlign(); redraw(); });
   $('opacity').addEventListener('input', function () { cfg.opacity = parseFloat(this.value); $('opVal').textContent = cfg.opacity; save('steelar.cfg', cfg); applyOpacity(); redraw(); });
 
+  // ---------- 半自動對位（不用標記）----------
+  // 上線 = 上翼板靠相機這側的邊（梁頂），下線 = 下翼板靠相機這側的邊（梁底），紅線 = 梁端。
+  // 兩條平行邊給出梁的方向，梁端兩個角給出距離與位置。
+  var align = null, ov = $('ov'), octx = ov.getContext('2d');
+
+  function linePose(P, endIsNorth, dx) {     // P：[上@梁端, 上@另一頭, 下@另一頭, 下@梁端]（影片像素）
+    var S = member.section, f = focal;
+    function ray(p) { return new THREE.Vector3((p.x - W / 2) / f, (p.y - H / 2) / f, 1); }
+    var r1 = ray(P[0]), r2 = ray(P[1]), r3 = ray(P[2]), r4 = ray(P[3]);
+    var d = new THREE.Vector3().crossVectors(new THREE.Vector3().crossVectors(r1, r2), new THREE.Vector3().crossVectors(r4, r3));
+    if (d.length() < 1e-9) return null;
+    d.normalize();
+    for (var tries = 0; tries < 2; tries++) {
+      var a = r1.dot(d), b = r4.dot(d), lam = 0.003;
+      var rho = (a * b + lam) / (b * b + lam);                      // 梁底角與梁頂角的距離比；加一點正則避免正看時不穩
+      var diff = r1.clone().sub(r4.clone().multiplyScalar(rho)), s1 = S.H / diff.length();
+      var X1 = r1.clone().multiplyScalar(s1), X4 = r4.clone().multiplyScalar(s1 * rho);
+      var q = X1.clone().add(d.clone().multiplyScalar(S.H));         // 沿 d 走一小段，看投影是不是朝另一頭
+      var du = f * q.x / q.z + W / 2 - P[0].x, dv = f * q.y / q.z + H / 2 - P[0].y;
+      if (du * (P[1].x - P[0].x) + dv * (P[1].y - P[0].y) >= 0) break;
+      d.multiplyScalar(-1);
+    }
+    var u = X1.clone().sub(X4); u.sub(d.clone().multiplyScalar(u.dot(d))).normalize();
+    var ex = d.clone().multiplyScalar(endIsNorth ? -1 : 1), ey = u, ez = new THREE.Vector3().crossVectors(ex, ey);
+    var sgn = ez.dot(X1) < 0 ? 1 : -1;                               // 相機在腹板的哪一面
+    var bx = (endIsNorth ? S.L : 0) + (dx || 0), by = S.H, bz = sgn * S.B / 2;
+    var t = X1.clone().sub(ex.clone().multiplyScalar(bx)).sub(ey.clone().multiplyScalar(by)).sub(ez.clone().multiplyScalar(bz));
+    var M = new THREE.Matrix4().set(ex.x, ey.x, ez.x, t.x, ex.y, ey.y, ez.y, t.y, ex.z, ey.z, ez.z, t.z, 0, 0, 0, 1);
+    return { B: new THREE.Matrix4().multiplyMatrices(FLIP, M), dist: X1.length() };
+  }
+
+  // 找鋼梁：霍夫找長直線 → 挑一對大致平行、中間很「乾淨」（腹板是整片鋼板）的線當上下邊 → 再找中間的直立線當梁端
+  function detectBeam(img) {
+    var w = img.width, h = img.height, d = img.data, n = w * h, g = new Float32Array(n), mag = new Float32Array(n), ang = new Float32Array(n), i, x, y;
+    for (i = 0; i < n; i++) g[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+    var sum = 0;
+    for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
+      i = y * w + x;
+      var gx = g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1] - g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1];
+      var gy = g[i + w - 1] + 2 * g[i + w] + g[i + w + 1] - g[i - w - 1] - 2 * g[i - w] - g[i - w + 1];
+      mag[i] = Math.hypot(gx, gy); ang[i] = Math.atan2(gy, gx); sum += mag[i];
+    }
+    var mean = sum / n, thr = Math.max(mean * 2.2, 18), nT = 180, diag = Math.ceil(Math.hypot(w, h)), nR = 2 * diag + 1, acc = new Float32Array(nT * nR), ct = [], st = [], t;
+    for (t = 0; t < nT; t++) { ct.push(Math.cos(t * Math.PI / 180)); st.push(Math.sin(t * Math.PI / 180)); }
+    for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
+      i = y * w + x; if (mag[i] < thr) continue;
+      var t0 = Math.round(ang[i] * 180 / Math.PI); t0 = ((t0 % 180) + 180) % 180;
+      for (var k = -3; k <= 3; k++) { t = (t0 + k + 180) % 180; acc[t * nR + Math.round(x * ct[t] + y * st[t]) + diag] += mag[i]; }
+    }
+    var lines = [];
+    for (var pk = 0; pk < 16; pk++) {
+      var bi = -1, bv = 0;
+      for (i = 0; i < acc.length; i++) if (acc[i] > bv) { bv = acc[i]; bi = i; }
+      if (bi < 0 || bv < thr * Math.min(w, h) * 0.25) break;
+      var bt = (bi / nR) | 0, br = bi % nR;
+      lines.push({ t: bt, c: ct[bt], s: st[bt], r: br - diag, v: bv });
+      for (var a = -7; a <= 7; a++) { var tt = (bt + a + 180) % 180; for (var b2 = -9; b2 <= 9; b2++) { var rr = br + b2; if (rr >= 0 && rr < nR) acc[tt * nR + rr] = 0; } }
+    }
+    function yAt(l, xx) { return (l.r - xx * l.c) / l.s; }
+    function xAt(l, yy) { return (l.r - yy * l.s) / l.c; }
+    function m(xx, yy) { xx = Math.round(xx); yy = Math.round(yy); return xx < 1 || yy < 1 || xx >= w - 1 || yy >= h - 1 ? 0 : mag[yy * w + xx]; }
+    var best = null;
+    for (i = 0; i < lines.length; i++) for (var j = i + 1; j < lines.length; j++) {
+      var A = lines[i], Bl = lines[j];
+      if (Math.abs(A.s) < 0.6 || Math.abs(Bl.s) < 0.6) continue;                  // 梁在畫面中大致是橫的
+      var dt = Math.abs(A.t - Bl.t); dt = Math.min(dt, 180 - dt); if (dt > 14) continue;
+      var ya = [yAt(A, 0.15 * w), yAt(A, 0.5 * w), yAt(A, 0.85 * w)], yb = [yAt(Bl, 0.15 * w), yAt(Bl, 0.5 * w), yAt(Bl, 0.85 * w)];
+      if ((ya[0] - yb[0]) * (ya[2] - yb[2]) <= 0) continue;                        // 不能在畫面內交叉
+      var sep = Math.abs(ya[1] - yb[1]); if (sep < 0.08 * h || sep > 0.8 * h) continue;
+      var dens = 0, cnt = 0;
+      for (var u = 0.15; u <= 0.86; u += 0.07) for (var vv = 0.2; vv <= 0.81; vv += 0.15) { var xx = u * w; dens += m(xx, yAt(A, xx) * (1 - vv) + yAt(Bl, xx) * vv); cnt++; }
+      dens = dens / cnt / (mean + 1);
+      var sc = (A.v + Bl.v) / (0.35 + dens);
+      if (!best || sc > best.sc) best = { sc: sc, top: ya[1] < yb[1] ? A : Bl, bot: ya[1] < yb[1] ? Bl : A, dens: dens };
+    }
+    if (!best) return { conf: 'none', pts: [{ x: 0.25 * w, y: 0.36 * h }, { x: 0.9 * w, y: 0.36 * h }, { x: 0.9 * w, y: 0.64 * h }, { x: 0.25 * w, y: 0.64 * h }] };
+    var T = best.top, Bm = best.bot, end = null;
+    lines.forEach(function (l) {
+      if (Math.abs(l.c) < 0.75) return;                                            // 梁端在畫面中大致是直的
+      var yt = (T.r * l.c - l.r * T.c) / (T.s * l.c - l.s * T.c), yb2 = (Bm.r * l.c - l.r * Bm.c) / (Bm.s * l.c - l.s * Bm.c), sup = 0;
+      if (!(yb2 - yt > 4)) return;
+      for (var q = 0.1; q <= 0.91; q += 0.05) { var yy = yt + (yb2 - yt) * q; sup += m(xAt(l, yy), yy) > thr ? 1 : 0; }
+      var xm = xAt(l, (yt + yb2) / 2); if (xm < 0.03 * w || xm > 0.97 * w) return;
+      if (sup < 9) return;
+      // 真正的梁端：上下兩條長邊只在它的一側延續；加勁板則兩側都有
+      function side(x0, x1) { var c2 = 0, tot = 0; for (var xs = x0; xs <= x1; xs += 2) { if (xs < 2 || xs > w - 3) continue; tot += 2; c2 += (m(xs, yAt(T, xs)) > thr ? 1 : 0) + (m(xs, yAt(Bm, xs)) > thr ? 1 : 0); } return tot ? c2 / tot : 0; }
+      var win = 0.14 * w, sl = side(xm - win, xm - 4), sr = side(xm + 4, xm + win), endness = Math.abs(sl - sr) / (Math.max(sl, sr) + 0.05), score = sup * (0.25 + endness);
+      if (!end || score > end.score) end = { l: l, sup: sup, xm: xm, score: score, right: sl > sr };
+    });
+    var xe = end ? end.xm : 0.25 * w, pe;
+    function onLine(l, xx) { return { x: xx, y: yAt(l, xx) }; }
+    function cross(l1, l2) { var den = l1.c * l2.s - l1.s * l2.c; return { x: (l1.r * l2.s - l2.r * l1.s) / den, y: (l2.r * l1.c - l1.r * l2.c) / den }; }
+    var goRight = end ? !end.right : xe < 0.5 * w;                             // 梁往哪一邊延伸
+    var xo = goRight ? Math.min(0.94 * w, xe + 0.6 * w) : Math.max(0.06 * w, xe - 0.6 * w);
+    var p1 = end ? cross(T, end.l) : onLine(T, xe), p4 = end ? cross(Bm, end.l) : onLine(Bm, xe);
+    return { conf: end ? 'ok' : 'noend', pts: [p1, onLine(T, xo), onLine(Bm, xo), p4] };
+  }
+
+  var ALIGN_MSG = {
+    ok: '找到一段像鋼梁的東西。藍色外框對得上嗎？對不上就拖圓點修正。',
+    noend: '找到上下兩條邊，但沒找到梁端。請把紅線的兩個圓點拖到梁端的上下角。',
+    none: '沒有認出鋼梁。請把上線拖到上翼板靠你這側的邊、下線拖到下翼板靠你這側的邊，紅線拖到梁端。'
+  };
+  function startAlign() {
+    if (!W || !running) return;
+    if (!frozen) setFrozen(true);
+    openPanel(null);
+    var k = 400 / Math.max(W, H), dw = Math.round(W * k), dh = Math.round(H * k);
+    det.width = dw; det.height = dh; dctx.drawImage(video, 0, 0, dw, dh);
+    var res = detectBeam(dctx.getImageData(0, 0, dw, dh));
+    align = { pts: res.pts.map(function (p) { return { x: p.x / k, y: p.y / k }; }), end: 'S', dx: 0, conf: res.conf };
+    // 梁端在畫面右邊時，預設它是北端（面對正面、南在左）
+    if (align.pts[0].x > align.pts[1].x) align.end = 'N';
+    ov.width = W; ov.height = H; ov.hidden = false;
+    $('alignBar').hidden = false; $('mainTools').hidden = true; $('alignMsg').textContent = ALIGN_MSG[res.conf];
+    // 圓點一定要落在看得到、按得到的範圍內（影片被裁切、下方有操作列）
+    var mm = ovScale(), vis = { x0: -mm.ox / mm.sc, x1: (mm.r.width - mm.ox) / mm.sc, y0: (80 - mm.oy) / mm.sc, y1: (mm.r.height - $('bottom').offsetHeight - 24 - mm.oy) / mm.sc };
+    var vw = vis.x1 - vis.x0, vh = vis.y1 - vis.y0, P = align.pts;
+    function yOn(p, q, x) { return p.y + (q.y - p.y) * (x - p.x) / ((q.x - p.x) || 1e-6); }
+    function inside(p) { return p.x >= vis.x0 + 12 && p.x <= vis.x1 - 12 && p.y >= vis.y0 && p.y <= vis.y1; }
+    var xa = vis.x0 + 0.2 * vw, xb = vis.x0 + 0.85 * vw, endRight = P[0].x > P[1].x;
+    if (!inside(P[0]) || !inside(P[3])) {
+      var xe2 = endRight ? xb : xa, t0 = { x: xe2, y: yOn(P[0], P[1], xe2) }, b0 = { x: xe2, y: yOn(P[3], P[2], xe2) };
+      P[0] = t0; P[3] = b0; if (align.conf === 'ok') align.conf = 'noend';
+    }
+    var xo2 = endRight ? xa : xb, t1 = { x: xo2, y: yOn(P[0], P[1], xo2) }, b1 = { x: xo2, y: yOn(P[3], P[2], xo2) };
+    P[1] = t1; P[2] = b1;
+    if (!P.every(inside)) {
+      align.conf = 'none';
+      align.pts = [{ x: xa, y: vis.y0 + 0.35 * vh }, { x: xb, y: vis.y0 + 0.35 * vh }, { x: xb, y: vis.y0 + 0.7 * vh }, { x: xa, y: vis.y0 + 0.7 * vh }];
+    }
+    $('alignMsg').textContent = ALIGN_MSG[align.conf];
+    refreshEnd(); solveAlign();
+  }
+  function endAlign() {
+    align = null; ov.hidden = true; $('alignBar').hidden = true; $('mainTools').hidden = false;
+    hasPose = false; poseG.visible = false; lastDet = null;
+  }
+  function refreshEnd() { [].forEach.call($('endSeg').children, function (b) { b.classList.toggle('on', b.dataset.end === align.end); }); }
+  function solveAlign() {
+    if (!align) return;
+    var res = linePose(align.pts, align.end === 'N', align.dx);
+    if (res) { res.B.decompose(sPos, sQuat, ts); poseG.matrix.compose(sPos, sQuat, ONE); poseG.matrixWorldNeedsUpdate = true; poseG.visible = true; lastDist = res.dist; }
+    else poseG.visible = false;
+    renderer.render(scene, camera); drawOv();
+    $('status').textContent = '半自動對位　距離約 ' + (lastDist / 1000).toFixed(1) + ' m'; $('status').className = 'status ok';
+  }
+  function ovScale() { var r = ov.getBoundingClientRect(), sc = Math.max(r.width / W, r.height / H); return { r: r, sc: sc, ox: (r.width - W * sc) / 2, oy: (r.height - H * sc) / 2 }; }
+  function drawOv() {
+    if (!align) return;
+    var P = align.pts, s = 1 / ovScale().sc;
+    octx.clearRect(0, 0, W, H); octx.lineCap = 'round';
+    function seg(a, b, col, ext) {
+      var dx = b.x - a.x, dy = b.y - a.y, e = ext ? 3 : 0;
+      octx.strokeStyle = '#000a'; octx.lineWidth = 5 * s; octx.beginPath(); octx.moveTo(a.x - dx * e, a.y - dy * e); octx.lineTo(b.x + dx * e, b.y + dy * e); octx.stroke();
+      octx.strokeStyle = col; octx.lineWidth = 2.5 * s; octx.stroke();
+    }
+    seg(P[0], P[1], '#ffe14a', true); seg(P[3], P[2], '#ffe14a', true); seg(P[0], P[3], '#ff5a4a', false);
+    var lab = ['上', '上', '下', '下'];
+    P.forEach(function (p, i) {
+      octx.beginPath(); octx.arc(p.x, p.y, 15 * s, 0, 6.2832); octx.fillStyle = (i === 0 || i === 3) ? '#ff5a4ae6' : '#ffe14ae6'; octx.fill(); octx.lineWidth = 2 * s; octx.strokeStyle = '#000'; octx.stroke();
+      octx.fillStyle = '#000'; octx.font = '600 ' + 15 * s + 'px sans-serif'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.fillText(lab[i], p.x, p.y + s);
+    });
+  }
+  var dragI = -1;
+  function ovPoint(e) { var t = e.touches ? e.touches[0] : e, m = ovScale(); return { x: (t.clientX - m.r.left - m.ox) / m.sc, y: (t.clientY - m.r.top - m.oy) / m.sc, sc: m.sc }; }
+  function ovDown(e) {
+    if (!align) return; e.preventDefault();
+    var p = ovPoint(e), bd = 46 / p.sc; dragI = -1;
+    align.pts.forEach(function (q, i) { var dd = Math.hypot(q.x - p.x, q.y - p.y); if (dd < bd) { bd = dd; dragI = i; } });
+  }
+  function ovMove(e) {
+    if (!align || dragI < 0) return; e.preventDefault();
+    var p = ovPoint(e); align.pts[dragI].x = p.x; align.pts[dragI].y = p.y; solveAlign();
+  }
+  function ovUp() { dragI = -1; }
+  ov.addEventListener('touchstart', ovDown, { passive: false }); ov.addEventListener('touchmove', ovMove, { passive: false }); ov.addEventListener('touchend', ovUp); ov.addEventListener('touchcancel', ovUp);
+  ov.addEventListener('mousedown', ovDown); window.addEventListener('mousemove', function (e) { if (dragI >= 0) ovMove(e); }); window.addEventListener('mouseup', ovUp);
+  $('alignBtn').addEventListener('click', startAlign);
+  $('alignRedo').addEventListener('click', function () { var keepEnd = align && align.end; startAlign(); if (keepEnd && align) { align.end = keepEnd; refreshEnd(); solveAlign(); } });
+  $('alignShot').addEventListener('click', takeShot);
+  $('alignDone').addEventListener('click', function () { setFrozen(false); });
+  $('endSeg').addEventListener('click', function (e) { var v = e.target.dataset.end; if (!v || !align) return; align.end = v; refreshEnd(); solveAlign(); });
+
   // ---------- 拍照 ----------
-  $('shotBtn').addEventListener('click', function () {
+  function takeShot() {
     if (!W) return;
     renderer.render(scene, camera);
     var c = document.createElement('canvas'); c.width = W; c.height = H;
     var x = c.getContext('2d'); x.drawImage(video, 0, 0, W, H); x.drawImage(glc, 0, 0, W, H);
     var d = new Date(), pad = function (n) { return (n < 10 ? '0' : '') + n; };
     var stamp = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-    var m = markerCfg(curId), txt = (member.name || '') + (member.drawing ? '　圖號 ' + member.drawing : '') + '　' + stamp + '　標記 #' + curId + ' @ ' + m.x + ' mm';
+    var m = markerCfg(curId), txt = (member.name || '') + (member.drawing ? '　圖號 ' + member.drawing : '') + '　' + stamp + (align ? '　半自動對位' : '　標記 #' + curId + ' @ ' + m.x + ' mm');
     var fs = Math.round(Math.max(W, H) / 52), bh = fs * 2;
     x.fillStyle = 'rgba(0,0,0,.62)'; x.fillRect(0, H - bh, W, bh);
     x.fillStyle = '#fff'; x.font = fs + 'px -apple-system, "PingFang TC", sans-serif'; x.textBaseline = 'middle'; x.fillText(txt, fs * 0.7, H - bh / 2, W - fs * 1.4);
     var url = c.toDataURL('image/jpeg', 0.9);
     $('shotImg').src = url; $('shotLink').href = url; $('shotLink').download = (member.name || 'steel') + '_' + stamp.replace(/[: ]/g, '') + '.jpg';
     openPanel('shotPanel');
-  });
+  }
+  $('shotBtn').addEventListener('click', takeShot);
 
   // ---------- 啟動 ----------
   showMember(); rebuild(); refreshSet();
-  window.__steelar = { get lastDet() { return lastDet; }, markerCorners: markerCorners, applyDetections: applyDetections, detector: detector, setDet: function (n) { DET_LONG = n; }, processFrame: processFrame, poseG: poseG, cfg: cfg, markerCfg: markerCfg, updateHolder: updateHolder, setProjection: setProjection, get focal() { return focal; }, glc: glc };
+  window.__steelar = { linePose: linePose, detectBeam: detectBeam, get lastDet() { return lastDet; }, markerCorners: markerCorners, applyDetections: applyDetections, detector: detector, setDet: function (n) { DET_LONG = n; }, processFrame: processFrame, poseG: poseG, cfg: cfg, markerCfg: markerCfg, updateHolder: updateHolder, setProjection: setProjection, get focal() { return focal; }, glc: glc };
 })();

@@ -19,13 +19,14 @@ h1{font-size:24px;margin:0 0 6px}
 .btn{font:inherit;display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:#2a3038;color:var(--text);text-decoration:none;cursor:pointer}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650;width:100%;margin:0 0 6px}
 .btn.ghost{background:transparent}
-.btn.small{min-height:42px;padding:0 14px;font-size:15px;flex:1}
+.btn.small{min-height:42px;padding:0 8px;font-size:15px;flex:1;white-space:nowrap}
 .btn.on{background:#e8ebef;color:#14171b;border-color:#e8ebef}
 
 /* AR */
 #ar{position:fixed;inset:0;background:#000;overflow:hidden;touch-action:none}
 #video,#gl{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 #gl{pointer-events:none}
+#ov{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;touch-action:none}
 #top{position:absolute;left:0;right:0;top:0;display:flex;gap:10px;align-items:center;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:linear-gradient(#000a,#0000)}
 .chip{font:inherit;font-size:14px;color:#fff;background:#0009;border:1px solid #fff3;border-radius:999px;padding:8px 13px;min-height:38px;white-space:nowrap}
 .chip.on{background:#fff;color:#111;border-color:#fff}
@@ -58,3 +59,11 @@ input[type=range]{width:100%;height:36px}
 .ruler{width:100mm;height:4mm;border:0.3mm solid #000;border-top:0;margin:4mm auto 0}
 @media print{ body{background:#fff} .sheet-ui{display:none} @page{size:A4 portrait;margin:5mm} }
 @media screen{ .marker-page{background:#fff;margin:0 auto 24px;padding:8mm 0;width:210mm;max-width:100%;transform-origin:top center} }
+
+/* 半自動對位 */
+#alignBar{background:#000b;border-radius:14px;padding:10px;margin-bottom:0}
+.amsg{font-size:14px;line-height:1.45;margin-bottom:8px}
+.arow{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:14px}
+.arow>span{flex:none;width:6.2em;color:#cfd5dc}
+.arow .seg,.arow .nudge{flex:1}
+.arow .seg button,.arow .nudge button{min-height:40px}

@@ -34,6 +34,7 @@
       <li>用電腦開啟<a href="markers.html">標記列印頁</a>，以 100% 實際大小列印，沿外框線裁切。</li>
       <li>把標記貼在腹板上，上緣與梁頂平行。</li>
       <li>開啟相機後，在「位置」裡輸入標記紙南緣距南端、上緣距梁頂的尺寸。</li>
+      <li>沒有標記時按「半自動」：它會試著找出鋼梁的上下邊和梁端，再請你確認或拖動修正。</li>
     </ol>
   </section>
 </main>
@@ -42,6 +43,7 @@
 <div id="ar" class="screen" hidden>
   <video id="video" playsinline muted autoplay></video>
   <canvas id="gl"></canvas>
+  <canvas id="ov" hidden></canvas>
 
   <div id="top">
     <button id="backBtn" class="chip" type="button">‹ 返回</button>
@@ -50,7 +52,18 @@
 
   <div id="bottom">
     <div id="chips" class="chips"></div>
-    <div class="tools">
+    <div id="alignBar" hidden>
+      <div id="alignMsg" class="amsg"></div>
+      <div class="arow"><span>紅線這一端是</span><div class="seg" id="endSeg"><button data-end="S" type="button">南端</button><button data-end="N" type="button">北端</button></div></div>
+      <div class="arow"><span>沿梁移動</span><div class="nudge" data-key="ax"><button data-d="-100">−100</button><button data-d="-10">−10</button><button data-d="10">+10</button><button data-d="100">+100</button></div></div>
+      <div class="tools">
+        <button id="alignRedo" class="btn small" type="button">重新偵測</button>
+        <button id="alignShot" class="btn small" type="button">拍照</button>
+        <button id="alignDone" class="btn small" type="button">結束</button>
+      </div>
+    </div>
+    <div class="tools" id="mainTools">
+      <button id="alignBtn" class="btn small" type="button">半自動</button>
       <button id="posBtn" class="btn small" type="button">位置</button>
       <button id="freezeBtn" class="btn small" type="button">凍結</button>
       <button id="shotBtn" class="btn small" type="button">拍照</button>

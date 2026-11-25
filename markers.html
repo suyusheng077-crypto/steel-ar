@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鋼構 AR 檢查｜標記列印</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="sheet-ui">
+  <h1>標記列印</h1>
+  <p class="lead">共 6 張（#0–#5），每張一頁 A4。請用電腦列印。</p>
+  <ol class="steps">
+    <li>列印時縮放選「100%」或「實際大小」，不要選「符合頁面」。</li>
+    <li>印好後量每頁下方的檢查線，應該剛好 100 mm。黑色方框邊長應為 160 mm。</li>
+    <li>沿虛線裁切，裁好的紙是 200 × 200 mm。虛線就是定位用的邊，請裁直。</li>
+    <li>如果量到的尺寸不是 160，到 App 的「設定」把標記黑框邊長改成實際量到的數字。</li>
+  </ol>
+  <div class="row"><a class="btn primary" href="markers.pdf">下載 PDF（建議，尺寸最準）</a></div>
+  <div class="row"><button class="btn ghost" type="button" onclick="window.print()">直接從這一頁列印</button></div>
+  <p><a href="index.html">‹ 回到檢查頁</a></p>
+</div>
+<div id="pages"></div>
+<script src="vendor/cv.js"></script>
+<script src="vendor/aruco.js"></script>
+<script>
+(function () {
+  var dic = new AR.Dictionary('ARUCO_MIP_36h12'), box = document.getElementById('pages');
+  for (var id = 0; id <= 5; id++) {
+    var p = document.createElement('div'); p.className = 'marker-page';
+    p.innerHTML = '<div class="marker-box">' + dic.generateSVG(id) + '</div>' +
+      '<div class="marker-cap">標記 #' + id + '　↑ 這一邊朝上（朝梁頂）　黑框 160 mm，裁切後 200 × 200 mm</div>' +
+      '<div class="ruler"></div><div class="marker-cap">檢查線 100 mm</div>';
+    box.appendChild(p);
+  }
+})();
+</script>
+</body>
+</html>

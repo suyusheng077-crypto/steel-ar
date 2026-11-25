@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>鋼構 AR 檢查</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 首頁 -->
+<main id="home" class="screen">
+  <h1>鋼構 AR 檢查</h1>
+  <p class="lead">把手機對著貼了標記的鋼梁，二次加工的位置會照實際比例疊在畫面上。</p>
+
+  <section class="card">
+    <div class="label">目前構件</div>
+    <div id="memberName" class="big"></div>
+    <div id="memberSpec" class="dim"></div>
+    <div class="row">
+      <label class="btn ghost">載入構件資料<input id="fileInput" type="file" accept=".json,application/json" hidden></label>
+      <button id="useDemo" class="btn ghost" type="button">改用範例梁</button>
+    </div>
+    <div id="loadMsg" class="msg"></div>
+  </section>
+
+  <button id="startBtn" class="btn primary" type="button">開啟相機</button>
+  <div id="camMsg" class="msg"></div>
+
+  <section class="card">
+    <div class="label">使用前</div>
+    <ol class="steps">
+      <li>用電腦開啟<a href="markers.html">標記列印頁</a>，以 100% 實際大小列印，沿外框線裁切。</li>
+      <li>把標記貼在腹板上，上緣與梁頂平行。</li>
+      <li>開啟相機後，在「位置」裡輸入標記紙南緣距南端、上緣距梁頂的尺寸。</li>
+    </ol>
+  </section>
+</main>
+
+<!-- AR 畫面 -->
+<div id="ar" class="screen" hidden>
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="gl"></canvas>
+
+  <div id="top">
+    <button id="backBtn" class="chip" type="button">‹ 返回</button>
+    <div id="status" class="status">尋找標記…</div>
+  </div>
+
+  <div id="bottom">
+    <div id="chips" class="chips"></div>
+    <div class="tools">
+      <button id="posBtn" class="btn small" type="button">位置</button>
+      <button id="freezeBtn" class="btn small" type="button">凍結</button>
+      <button id="shotBtn" class="btn small" type="button">拍照</button>
+      <button id="setBtn" class="btn small" type="button">設定</button>
+    </div>
+  </div>
+
+  <!-- 標記位置 -->
+  <div id="posPanel" class="panel" hidden>
+    <div class="panel-head"><strong>標記 <span id="posId">#0</span> 的位置</strong><button class="x" data-close="posPanel" type="button">關閉</button></div>
+    <div class="field">
+      <div class="flabel">標記紙南緣距南端 <b id="xVal"></b> mm</div>
+      <div class="nudge" data-key="x"><button data-d="-100">−100</button><button data-d="-10">−10</button><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="10">+10</button><button data-d="100">+100</button></div>
+    </div>
+    <div class="field">
+      <div class="flabel">標記紙上緣距梁頂 <b id="yVal"></b> mm</div>
+      <div class="nudge" data-key="y"><button data-d="-10">−10</button><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="10">+10</button></div>
+    </div>
+    <div class="field">
+      <div class="flabel">貼在腹板的</div>
+      <div class="seg" id="sideSeg"><button data-side="front" type="button">正面</button><button data-side="back" type="button">背面</button></div>
+    </div>
+    <div class="field">
+      <div class="flabel">快速定位</div>
+      <div id="presets" class="presets"></div>
+    </div>
+  </div>
+
+  <!-- 設定 -->
+  <div id="setPanel" class="panel" hidden>
+    <div class="panel-head"><strong>設定</strong><button class="x" data-close="setPanel" type="button">關閉</button></div>
+    <div class="field">
+      <div class="flabel">鏡頭視角 <b id="fovVal"></b>°</div>
+      <input id="fov" type="range" min="45" max="85" step="0.5">
+      <div class="dim small">正面看對得上、斜著看卻一邊偏掉時，慢慢調這個，調到斜看也對齊為止。每支手機只要調一次。</div>
+    </div>
+    <div class="field">
+      <div class="flabel">疊圖濃度 <b id="opVal"></b>%</div>
+      <input id="opacity" type="range" min="15" max="90" step="5">
+    </div>
+    <div class="field">
+      <div class="flabel">標記黑框邊長 <b id="msVal"></b> mm</div>
+      <div class="nudge" data-key="ms"><button data-d="-10">−10</button><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="10">+10</button></div>
+      <div class="dim small">列印後請實際量黑色方框的邊長，不是 160 就改成量到的數字。</div>
+    </div>
+  </div>
+
+  <!-- 拍照結果 -->
+  <div id="shotPanel" class="panel full" hidden>
+    <div class="panel-head"><strong>檢查照片</strong><button class="x" data-close="shotPanel" type="button">關閉</button></div>
+    <img id="shotImg" alt="檢查照片">
+    <div class="row"><a id="shotLink" class="btn primary" download>儲存照片</a></div>
+    <div class="dim small">也可以長按照片儲存到相簿。</div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/cv.js"></script>
+<script src="vendor/aruco.js"></script>
+<script src="model.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
